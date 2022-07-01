@@ -174,21 +174,23 @@ Implementers may also retrieve blobs individually per transaction.
 
 Before publishing a prepared beacon block proposal, the corresponding blobs are packaged into a sidecar object for distribution to the network:
 
-```
-blobs_sidecar = BlobsSidecar(
-    beacon_block_root=hash_tree_root(beacon_block)
-    beacon_block_slot=beacon_block.slot
-    blobs=blobs,
-)
+```python
+def get_blobs_sidecar(block: BeaconBlock, blobs: Sequence[Blob]) -> BlobsSidecar:
+    return BlobsSidecar(
+        beacon_block_root=hash_tree_root(block),
+        beacon_block_slot=block.slot,
+        blobs=blobs,
+    )
 ```
 
 And then signed:
 
-```
-domain = get_domain(state, DOMAIN_BLOBS_SIDECAR, blobs_sidecar.beacon_block_slot // SLOTS_PER_EPOCH)
-signing_root = compute_signing_root(blobs_sidecar, domain)
-signature = bls.Sign(privkey, signing_root)
-signed_blobs_sidecar = SignedBlobsSidecar(message=blobs_sidecar, signature=signature)
+```python
+def get_signed_blobs_sidecar(state: BeaconState, blobs_sidecar: BlobsSidecar, privkey: int) -> SignedBlobsSidecar:
+    domain = get_domain(state, DOMAIN_BLOBS_SIDECAR, blobs_sidecar.beacon_block_slot // SLOTS_PER_EPOCH)
+    signing_root = compute_signing_root(blobs_sidecar, domain)
+    signature = bls.Sign(privkey, signing_root)
+    return SignedBlobsSidecar(message=blobs_sidecar, signature=signature)
 ```
 
 This `signed_blobs_sidecar` is then published to the global `blobs_sidecar` topic as soon as the `beacon_block` is published.
