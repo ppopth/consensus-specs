@@ -116,7 +116,7 @@ def verify_blobs_sidecar(slot: Slot, beacon_block_root: Root,
     assert len(expected_kzgs) == len(blobs)
 
     # Generate random linear combination challenges
-    r = hash_to_bls_field(BlobsAndCommmitments[blobs, expected_kzgs])
+    r = hash_to_bls_field(BlobsAndCommmitments(blobs=blobs, blob_kzgs=expected_kzgs))
     r_powers = compute_powers(r, len(expected_kzgs))
 
     # Create aggregated polynomial in evaluation form
