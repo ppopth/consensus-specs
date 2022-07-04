@@ -81,7 +81,7 @@ def get_sample_opaque_tx(spec, blob_count=1, rng=None):
     return opaque_tx, blobs, blob_kzgs
 
 
-def compute_proof(spec, blobs):
+def compute_proof_from_blobs(spec, blobs):
     kzgs = [spec.blob_to_kzg(blob) for blob in blobs]
     r = spec.hash_to_bls_field(spec.BlobsAndCommmitments(blobs=blobs, blob_kzgs=kzgs))
     r_powers = spec.compute_powers(r, len(kzgs))
@@ -93,10 +93,32 @@ def compute_proof(spec, blobs):
         polynomial=aggregated_poly,
         commitment=aggregated_poly_commitment,
     ))
+    return compute_proof_single(spec, aggregated_poly, x)
 
-    aggregated_poly_in_int = [int(i) for i in aggregated_poly]
-    quotient_polynomial = div_polys(spec, aggregated_poly_in_int, [-int(x), 1])
+
+def compute_proof_single(spec, polynomial, x):
+    polynomial_in_int = [int(i) for i in polynomial]
+    quotient_polynomial = div_polys(spec, polynomial_in_int, [-int(x), 1])
     return spec.lincomb(spec.KZG_SETUP_G1[:len(quotient_polynomial)], quotient_polynomial)
+
+
+def eval_poly_at(spec, p, x):
+    """
+    Evaluate polynomial p (coefficient form) at point x
+    """
+    y = 0
+    power_of_x = 1
+    for i, p_coeff in enumerate(p):
+        y += power_of_x * p_coeff
+        power_of_x = (power_of_x * x) % spec.BLS_MODULUS
+    return y % spec.BLS_MODULUS
+
+
+def commit_to_poly(spec, polynomial):
+    """
+    Kate commitment to polynomial in coefficient form
+    """
+    return spec.lincomb(spec.KZG_SETUP_G1[:len(polynomial)], polynomial)
 
 
 def div_polys(spec, a, b):
