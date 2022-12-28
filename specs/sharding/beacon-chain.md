@@ -25,6 +25,7 @@
     - [`BuilderBlockBidWithRecipientAddress`](#builderblockbidwithrecipientaddress)
     - [`ShardedCommitmentsContainer`](#shardedcommitmentscontainer)
     - [`ShardSample`](#shardsample)
+    - [`SignedShardSample`](#signedshardsample)
   - [Extended Containers](#extended-containers)
     - [`BeaconState`](#beaconstate)
     - [`BuilderBlockData`](#builderblockdata)
@@ -48,7 +49,7 @@
 
 ## Introduction
 
-This document describes the extensions made to the Phase 0 design of The Beacon Chain to support data sharding,
+This document describes the extensions made to the Bellatrix fork of The Beacon Chain to support data sharding,
 based on the ideas [here](https://notes.ethereum.org/@dankrad/new_sharding) and more broadly [here](https://arxiv.org/abs/1809.09044),
 using KZG10 commitments to commit to data to remove any need for fraud proofs (and hence, safety-critical synchrony assumptions) in the design.
 
@@ -174,6 +175,13 @@ class ShardSample(Container):
     data: Vector[BLSFieldElement, FIELD_ELEMENTS_PER_SAMPLE]
     proof: KZGCommitment
     builder: ValidatorIndex
+```
+
+#### `SignedShardSample`
+
+```python
+class SignedShardSample(Container):
+    message: ShardSample
     signature: BLSSignature
 ```
 
@@ -183,7 +191,44 @@ class ShardSample(Container):
 
 ```python
 class BeaconState(bellatrix.BeaconState):
-    blocks_since_builder_block: List[BeaconBlock, MAX_PROPOSER_BLOCKS_BETWEEN_BUILDER_BLOCKS]
+    # Versioning
+    genesis_time: uint64
+    genesis_validators_root: Root
+    slot: Slot
+    fork: Fork
+    # History
+    latest_block_header: BeaconBlockHeader
+    block_roots: Vector[Root, SLOTS_PER_HISTORICAL_ROOT]
+    state_roots: Vector[Root, SLOTS_PER_HISTORICAL_ROOT]
+    historical_roots: List[Root, HISTORICAL_ROOTS_LIMIT]
+    # Eth1
+    eth1_data: Eth1Data
+    eth1_data_votes: List[Eth1Data, EPOCHS_PER_ETH1_VOTING_PERIOD * SLOTS_PER_EPOCH]
+    eth1_deposit_index: uint64
+    # Registry
+    validators: List[Validator, VALIDATOR_REGISTRY_LIMIT]
+    balances: List[Gwei, VALIDATOR_REGISTRY_LIMIT]
+    # Randomness
+    randao_mixes: Vector[Bytes32, EPOCHS_PER_HISTORICAL_VECTOR]
+    # Slashings
+    slashings: Vector[Gwei, EPOCHS_PER_SLASHINGS_VECTOR]  # Per-epoch sums of slashed effective balances
+    # Participation
+    previous_epoch_participation: List[ParticipationFlags, VALIDATOR_REGISTRY_LIMIT]
+    current_epoch_participation: List[ParticipationFlags, VALIDATOR_REGISTRY_LIMIT]
+    # Finality
+    justification_bits: Bitvector[JUSTIFICATION_BITS_LENGTH]  # Bit set for every recent justified epoch
+    previous_justified_checkpoint: Checkpoint
+    current_justified_checkpoint: Checkpoint
+    finalized_checkpoint: Checkpoint
+    # Inactivity
+    inactivity_scores: List[uint64, VALIDATOR_REGISTRY_LIMIT]
+    # Sync
+    current_sync_committee: SyncCommittee
+    next_sync_committee: SyncCommittee
+    # Execution
+    latest_execution_payload_header: ExecutionPayloadHeader
+    # PBS
+    blocks_since_builder_block: List[BeaconBlock, MAX_PROPOSER_BLOCKS_BETWEEN_BUILDER_BLOCKS] # [New in Sharding]
 ```
 
 #### `BuilderBlockData`
@@ -198,7 +243,19 @@ class BuilderBlockData(Container):
 
 ```python
 class BeaconBlockBody(altair.BeaconBlockBody):
-    payload_data: Union[BuilderBlockBid, BuilderBlockData]
+    randao_reveal: BLSSignature
+    eth1_data: Eth1Data  # Eth1 data vote
+    graffiti: Bytes32  # Arbitrary data
+    # Operations
+    proposer_slashings: List[ProposerSlashing, MAX_PROPOSER_SLASHINGS]
+    attester_slashings: List[AttesterSlashing, MAX_ATTESTER_SLASHINGS]
+    attestations: List[Attestation, MAX_ATTESTATIONS]
+    deposits: List[Deposit, MAX_DEPOSITS]
+    voluntary_exits: List[SignedVoluntaryExit, MAX_VOLUNTARY_EXITS]
+    sync_aggregate: SyncAggregate
+    # Execution
+    # execution_payload: ExecutionPayload  # [Removed in Sharding]
+    payload_data: Union[BuilderBlockBid, BuilderBlockData] # [New in Sharding]
 ```
 
 ## Helper functions
@@ -234,21 +291,21 @@ def get_active_shard_count(state: BeaconState, epoch: Epoch) -> uint64:
 ```python
 def process_block(state: BeaconState, block: BeaconBlock) -> None:
     process_block_header(state, block)
-    verify_builder_block_bid(state, block)
-    process_sharded_data(state, block)
-    if is_execution_enabled(state, block.body):
-        process_execution_payload(state, block, EXECUTION_ENGINE)
+    process_builder_block_bid(state, block) # [New in Sharding]
+    process_sharded_data(state, block) # [New in Sharding]
+    if is_builder_block_slot(block.slot) and is_execution_enabled(state, block.body):
+        process_execution_payload(state, block.body, EXECUTION_ENGINE) # [Modified in Sharding]
 
-    if not is_builder_block_slot(block.slot):
+    if not is_builder_block_slot(block.slot): # [New in Sharding]
         process_randao(state, block.body)
 
     process_eth1_data(state, block.body)
     process_operations(state, block.body)
     process_sync_aggregate(state, block.body.sync_aggregate)
 
-    if is_builder_block_slot(block.slot):
-        state.blocks_since_builder_block = []
-    state.blocks_since_builder_block.append(block)
+    if is_builder_block_slot(block.slot): # [New in Sharding]
+        state.blocks_since_builder_block = [] # [New in Sharding]
+    state.blocks_since_builder_block.append(block) # [New in Sharding]
 ```
 
 #### Block header
@@ -260,7 +317,7 @@ def process_block_header(state: BeaconState, block: BeaconBlock) -> None:
     # Verify that the block is newer than latest block header
     assert block.slot > state.latest_block_header.slot
     # Verify that proposer index is the correct index
-    if not is_builder_block_slot(block.slot):
+    if not is_builder_block_slot(block.slot): # [New in Sharding]
         assert block.proposer_index == get_beacon_proposer_index(state)
     # Verify that the parent matches
     assert block.parent_root == hash_tree_root(state.latest_block_header)
@@ -281,11 +338,11 @@ def process_block_header(state: BeaconState, block: BeaconBlock) -> None:
 #### Builder Block Bid
 
 ```python
-def verify_builder_block_bid(state: BeaconState, block: BeaconBlock) -> None:
+def process_builder_block_bid(state: BeaconState, block: BeaconBlock) -> None:
     if is_builder_block_slot(block.slot):
         # Get last builder block bid
         assert state.blocks_since_builder_block[-1].body.payload_data.selector == 0
-        builder_block_bid = state.blocks_since_builder_block[-1].body.payload_data.value.builder_block_bid
+        builder_block_bid = state.blocks_since_builder_block[-1].body.payload_data.value
         assert builder_block_bid.slot + 1 == block.slot
 
         assert block.body.payload_data.selector == 1 # Verify that builder block does not contain bid
@@ -294,7 +351,7 @@ def verify_builder_block_bid(state: BeaconState, block: BeaconBlock) -> None:
 
         assert builder_block_bid.execution_payload_root == hash_tree_root(builder_block_data.execution_payload)
 
-        assert builder_block_bid.sharded_data_commitment_count == builder_block_data.included_sharded_data_commitments
+        assert builder_block_bid.sharded_data_commitment_count == builder_block_data.sharded_commitments_container.included_sharded_data_commitments
 
         assert builder_block_bid.sharded_data_commitment_root == hash_tree_root(builder_block_data.sharded_commitments[-builder_block_bid.included_sharded_data_commitments:])
 
@@ -303,7 +360,7 @@ def verify_builder_block_bid(state: BeaconState, block: BeaconBlock) -> None:
     else:
         assert block.body.payload_data.selector == 0
 
-        builder_block_bid = block.body.payload_data.value.builder_block_bid
+        builder_block_bid = block.body.payload_data.value
         assert builder_block_bid.slot == block.slot
         assert builder_block_bid.parent_block_root == block.parent_root
         # We do not check that the builder address exists or has sufficient balance here.
@@ -365,52 +422,50 @@ def process_sharded_data(state: BeaconState, block: BeaconBlock) -> None:
 #### Execution payload
 
 ```python
-def process_execution_payload(state: BeaconState, block: BeaconBlock, execution_engine: ExecutionEngine) -> None:
-    if is_builder_block_slot(block.slot):
-        assert block.body.payload_data.selector == 1
-        payload = block.body.payload_data.value.execution_payload
+def process_execution_payload(state: BeaconState, body: BeaconBlockBody, execution_engine: ExecutionEngine) -> None: # [Modified in Sharding]
+    assert body.payload_data.selector == 1 # [New in Sharding]
+    payload = body.payload_data.value.execution_payload # [New in Sharding]
 
-        # Verify consistency of the parent hash with respect to the previous execution payload header
-        if is_merge_transition_complete(state):
-            assert payload.parent_hash == state.latest_execution_payload_header.block_hash
-        # Verify random
-        assert payload.random == get_randao_mix(state, get_current_epoch(state))
-        # Verify timestamp
-        assert payload.timestamp == compute_timestamp_at_slot(state, state.slot)
+    # Verify consistency of the parent hash with respect to the previous execution payload header
+    if is_merge_transition_complete(state):
+        assert payload.parent_hash == state.latest_execution_payload_header.block_hash
+    # Verify prev_randao
+    assert payload.prev_randao == get_randao_mix(state, get_current_epoch(state))
+    # Verify timestamp
+    assert payload.timestamp == compute_timestamp_at_slot(state, state.slot)
 
-        # Get sharded data commitments
-        sharded_commitments_container = block.body.sharded_commitments_container
-        sharded_data_commitments = sharded_commitments_container.sharded_commitments[-sharded_commitments_container.included_sharded_data_commitments:]
+    # Get sharded data commitments
+    sharded_commitments_container = body.sharded_commitments_container # [New in Sharding]
+    sharded_data_commitments = sharded_commitments_container.sharded_commitments[-sharded_commitments_container.included_sharded_data_commitments:] # [New in Sharding]
 
-        # Get all unprocessed builder block bids
-        unprocessed_builder_block_bid_with_recipient_addresses = []
-        for block in state.blocks_since_builder_block[1:]:
-            unprocessed_builder_block_bid_with_recipient_addresses.append(block.body.builder_block_bid_with_recipient_address.value)
+    # Get all unprocessed builder block bids
+    unprocessed_builder_block_bid_with_recipient_addresses = [] # [New in Sharding]
+    for block in state.blocks_since_builder_block[1:]: # [New in Sharding]
+        # TODO: Define builder_block_bid_with_recipient_address
+        unprocessed_builder_block_bid_with_recipient_addresses.append(block.body.builder_block_bid_with_recipient_address.value) # [New in Sharding]
 
-        # Verify the execution payload is valid
-        # The execution engine gets two extra payloads: One for the sharded data commitments (these are needed to verify type 3 transactions)
-        # and one for all so far unprocessed builder block bids:
-        # * The execution engine needs to transfer the balance from the bidder to the proposer.
-        # * The execution engine needs to deduct data gas fees from the bidder balances
-        assert execution_engine.execute_payload(payload,
-                                                sharded_data_commitments,
-                                                unprocessed_builder_block_bid_with_recipient_addresses)
+    # Verify the execution payload is valid
+    # The execution engine gets two extra payloads: One for the sharded data commitments (these are needed to verify type 3 transactions)
+    # and one for all so far unprocessed builder block bids:
+    # * The execution engine needs to transfer the balance from the bidder to the proposer.
+    # * The execution engine needs to deduct data gas fees from the bidder balances
+    assert execution_engine.execute_payload(payload, sharded_data_commitments, unprocessed_builder_block_bid_with_recipient_addresses) # [New in Sharding]
 
-        # Cache execution payload header
-        state.latest_execution_payload_header = ExecutionPayloadHeader(
-            parent_hash=payload.parent_hash,
-            fee_recipient=payload.fee_recipient,
-            state_root=payload.state_root,
-            receipt_root=payload.receipt_root,
-            logs_bloom=payload.logs_bloom,
-            random=payload.random,
-            block_number=payload.block_number,
-            gas_limit=payload.gas_limit,
-            gas_used=payload.gas_used,
-            timestamp=payload.timestamp,
-            extra_data=payload.extra_data,
-            base_fee_per_gas=payload.base_fee_per_gas,
-            block_hash=payload.block_hash,
-            transactions_root=hash_tree_root(payload.transactions),
-        )
+    # Cache execution payload header
+    state.latest_execution_payload_header = ExecutionPayloadHeader(
+        parent_hash=payload.parent_hash,
+        fee_recipient=payload.fee_recipient,
+        state_root=payload.state_root,
+        receipts_root=payload.receipts_root,
+        logs_bloom=payload.logs_bloom,
+        prev_randao=payload.prev_randao,
+        block_number=payload.block_number,
+        gas_limit=payload.gas_limit,
+        gas_used=payload.gas_used,
+        timestamp=payload.timestamp,
+        extra_data=payload.extra_data,
+        base_fee_per_gas=payload.base_fee_per_gas,
+        block_hash=payload.block_hash,
+        transactions_root=hash_tree_root(payload.transactions),
+    )
 ```

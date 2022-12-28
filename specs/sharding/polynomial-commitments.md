@@ -164,6 +164,7 @@ def compute_powers(x: BLSFieldElement, n: uint64) -> List[BLSFieldElement]:
 #### `low_degree_check`
 
 ```python
+// TODO: Review
 def low_degree_check(commitments: List[KZGCommitment]):
     """
     Checks that the commitments are on a low-degree polynomial.
@@ -251,6 +252,7 @@ def multiply_polynomials(a: BLSPolynomialByCoefficients, b: BLSPolynomialByCoeff
     """
     Multiplies the polynomials `a` and `b` given by their coefficients
     """
+    // TODO: Do FFT
     r = [0]
     for power, coef in enumerate(a):
         summand = [0] * power + [coef * x % BLS_MODULUS for x in b]
@@ -266,6 +268,7 @@ def interpolate_polynomial(xs: List[BLSFieldElement], ys: List[BLSFieldElement])
     """
     Lagrange interpolation
     """
+    // TODO: Do IFFT if possible
     assert len(xs) == len(ys)
     r = [0]
 
@@ -358,7 +361,7 @@ def verify_kzg_proof(commitment: KZGCommitment, x: BLSFieldElement, y: BLSFieldE
 
     assert (
         bls.Pairing(proof, zero_poly)
-        == bls.Pairing(commitment.add(G1_SETUP[0].mult(y).neg), G2_SETUP[0])
+        == bls.Pairing(commitment.add(G1_SETUP[0].mult(y).neg()), G2_SETUP[0])
     )
 ```
 
@@ -372,6 +375,7 @@ def verify_kzg_multiproof(commitment: KZGCommitment,
     """
     Verify a KZG multiproof.
     """
+    // TODO: If xs are roots of unity, we can do it faster using IFFT
     zero_poly = elliptic_curve_lincomb(G2_SETUP[:len(xs)], interpolate_polynomial(xs, [0] * len(ys)))
     interpolated_poly = elliptic_curve_lincomb(G2_SETUP[:len(xs)], interpolate_polynomial(xs, ys))
 

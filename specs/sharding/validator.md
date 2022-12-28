@@ -81,9 +81,10 @@ def reconstruct_polynomial(samples: List[SignedShardSample]) -> List[SignedShard
 ### `verify_sample`
 
 ```python
-def verify_sample(state: BeaconState, block: BeaconBlock, sample: SignedShardSample):
+def verify_sample(state: BeaconState, block: BeaconBlock, signed_sample: SignedShardSample):
+    sample = signed_sample.message
     assert sample.row < 2 * get_active_shard_count(state, get_current_epoch(block.slot))
-    assert sample.column < 2 * SAMPLES_PER_BLOB
+    assert sample.column < SAMPLES_PER_BLOB
     assert block.slot == sample.slot
 
     # Verify builder signature.
@@ -94,8 +95,11 @@ def verify_sample(state: BeaconState, block: BeaconBlock, sample: SignedShardSam
 
     roots_in_rbo = list_to_reverse_bit_order(roots_of_unity(SAMPLES_PER_BLOB * FIELD_ELEMENTS_PER_SAMPLE))
 
+    assert block.body.payload_data.selector == 1
+    builder_block_data = block.body.payload_data.value
+
     # Verify KZG proof
-    verify_kzg_multiproof(block.body.payload_data.value.sharded_commitments_container.sharded_commitments[sample.row],
+    verify_kzg_multiproof(builder_block_data.sharded_commitments_container.sharded_commitments[sample.row],
                           roots_in_rbo[sample.column * FIELD_ELEMENTS_PER_SAMPLE:(sample.column + 1) * FIELD_ELEMENTS_PER_SAMPLE]
                           sample.data,
                           sample.proof)

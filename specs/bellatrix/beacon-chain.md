@@ -209,21 +209,21 @@ class ExecutionPayloadHeader(Container):
 
 ### Predicates
 
-#### `is_merge_transition_complete`
+#### `is_merge_transition_complete` REVIEWED
 
 ```python
 def is_merge_transition_complete(state: BeaconState) -> bool:
     return state.latest_execution_payload_header != ExecutionPayloadHeader()
 ```
 
-#### `is_merge_transition_block`
+#### `is_merge_transition_block` REVIEWED
 
 ```python
 def is_merge_transition_block(state: BeaconState, body: BeaconBlockBody) -> bool:
     return not is_merge_transition_complete(state) and body.execution_payload != ExecutionPayload()
 ```
 
-#### `is_execution_enabled`
+#### `is_execution_enabled` REVIEWED
 
 ```python
 def is_execution_enabled(state: BeaconState, body: BeaconBlockBody) -> bool:
@@ -232,7 +232,7 @@ def is_execution_enabled(state: BeaconState, body: BeaconBlockBody) -> bool:
 
 ### Misc
 
-#### `compute_timestamp_at_slot`
+#### `compute_timestamp_at_slot` REVIEWED
 
 *Note*: This function is unsafe with respect to overflows and underflows.
 
@@ -244,7 +244,7 @@ def compute_timestamp_at_slot(state: BeaconState, slot: Slot) -> uint64:
 
 ### Beacon state accessors
 
-#### Modified `get_inactivity_penalty_deltas`
+#### Modified `get_inactivity_penalty_deltas` REVIEWED
 
 *Note*: The function `get_inactivity_penalty_deltas` is modified to use `INACTIVITY_PENALTY_QUOTIENT_BELLATRIX`.
 
@@ -268,7 +268,7 @@ def get_inactivity_penalty_deltas(state: BeaconState) -> Tuple[Sequence[Gwei], S
 
 ### Beacon state mutators
 
-#### Modified `slash_validator`
+#### Modified `slash_validator` REVIEWED
 
 *Note*: The function `slash_validator` is modified to use `MIN_SLASHING_PENALTY_QUOTIENT_BELLATRIX`.
 
@@ -339,7 +339,7 @@ def process_block(state: BeaconState, block: BeaconBlock) -> None:
 
 #### Execution payload
 
-##### `process_execution_payload`
+##### `process_execution_payload` REVIEWED
 
 ```python
 def process_execution_payload(state: BeaconState, payload: ExecutionPayload, execution_engine: ExecutionEngine) -> None:
@@ -373,7 +373,7 @@ def process_execution_payload(state: BeaconState, payload: ExecutionPayload, exe
 
 ### Epoch processing
 
-#### Slashings
+#### Slashings REVIEWED
 
 *Note*: The function `process_slashings` is modified to use `PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX`.
 

@@ -159,8 +159,9 @@ def process_block(state: BeaconState, block: BeaconBlock) -> None:
 #### Blob KZG commitments
 
 ```python
-def process_blob_kzg_commitments(state: BeaconState, body: BeaconBlockBody):
-    assert verify_kzg_commitments_against_transactions(body.execution_payload.transactions, body.blob_kzg_commitments)
+def process_blob_kzg_commitments(state: BeaconState, block: BeaconBlockBody):
+    assert verify_kzg_commitments_against_transactions(body.execution_payload.transactions, block.blob_kzg_commitments)
+    // TODO: probably verify if the data are available.
 ```
 
 ## Testing
